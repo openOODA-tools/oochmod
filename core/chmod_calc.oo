@@ -1,0 +1,212 @@
+// # oochmod Permission Calculation Subsystem
+//
+// Logline: Converts, computes, and parses octal and symbolic UNIX file permission modes.
+//
+// Setup: Decodes octal bitmasks and symbolic delta expressions (u+x, go-w, a=rx).
+//
+// Beats:
+//   1. Convert between integer bitmasks, octal strings, and 9-char symbolic representations.
+//   2. Validate and identify octal numeral sequences.
+//   3. Apply symbolic delta clauses to existing permission bitmasks.
+//   4. Resolve target modes from composite specification strings.
+
+pub fn is_octal_string(s: String) -> Bool {
+    let n: Int = chars_len(s);
+    if n == 0 || n > 5 {
+        return false;
+    }
+    let mut i: Int = 0;
+    while i < n {
+        let b: Int = byte_at(s, i);
+        if b < 48 || b > 55 {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+pub fn octal_to_int(s: String) -> Int {
+    let n: Int = chars_len(s);
+    let mut val: Int = 0;
+    let mut i: Int = 0;
+    while i < n {
+        let b: Int = byte_at(s, i);
+        if b >= 48 && b <= 55 {
+            val = val * 8 + (b - 48);
+        }
+        i = i + 1;
+    }
+    return val;
+}
+
+pub fn int_to_octal_str(val: Int) -> String {
+    let mut v: Int = val % 4096;
+    let d3: Int = v % 8;
+    v = v / 8;
+    let d2: Int = v % 8;
+    v = v / 8;
+    let d1: Int = v % 8;
+    v = v / 8;
+    let d0: Int = v % 8;
+    return to_string(d0) + to_string(d1) + to_string(d2) + to_string(d3);
+}
+
+pub fn mode_to_symbolic(val: Int) -> String {
+    let ur: String = if ((val / 256) % 2) == 1 { "r" } else { "-" };
+    let uw: String = if ((val / 128) % 2) == 1 { "w" } else { "-" };
+    let su: Bool = (((val / 2048) % 2) == 1);
+    let ux: String = if ((val / 64) % 2) == 1 {
+        if su { "s" } else { "x" }
+    } else {
+        if su { "S" } else { "-" }
+    };
+
+    let gr: String = if ((val / 32) % 2) == 1 { "r" } else { "-" };
+    let gw: String = if ((val / 16) % 2) == 1 { "w" } else { "-" };
+    let sg: Bool = (((val / 1024) % 2) == 1);
+    let gx: String = if ((val / 8) % 2) == 1 {
+        if sg { "s" } else { "x" }
+    } else {
+        if sg { "S" } else { "-" }
+    };
+
+    let or: String = if ((val / 4) % 2) == 1 { "r" } else { "-" };
+    let ow: String = if ((val / 2) % 2) == 1 { "w" } else { "-" };
+    let st: Bool = (((val / 512) % 2) == 1);
+    let ox: String = if (val % 2) == 1 {
+        if st { "t" } else { "x" }
+    } else {
+        if st { "T" } else { "-" }
+    };
+
+    return ur + uw + ux + gr + gw + gx + or + ow + ox;
+}
+
+pub fn apply_symbolic_clause(current_mode: Int, clause: String) -> Int {
+    let n: Int = chars_len(clause);
+    if n == 0 {
+        return current_mode;
+    }
+
+    let mut i: Int = 0;
+    let mut target_u: Bool = false;
+    let mut target_g: Bool = false;
+    let mut target_o: Bool = false;
+
+    while i < n {
+        let ch: String = char_at(clause, i);
+        if ch == "+" || ch == "-" || ch == "=" {
+            break;
+        }
+        if ch == "u" { target_u = true; }
+        else if ch == "g" { target_g = true; }
+        else if ch == "o" { target_o = true; }
+        else if ch == "a" {
+            target_u = true;
+            target_g = true;
+            target_o = true;
+        }
+        i = i + 1;
+    }
+
+    if !target_u && !target_g && !target_o {
+        target_u = true;
+        target_g = true;
+        target_o = true;
+    }
+
+    if i >= n {
+        return current_mode;
+    }
+
+    let op: String = char_at(clause, i);
+    i = i + 1;
+
+    let mut r_bit: Bool = false;
+    let mut w_bit: Bool = false;
+    let mut x_bit: Bool = false;
+    let mut s_bit: Bool = false;
+    let mut t_bit: Bool = false;
+
+    while i < n {
+        let perm: String = char_at(clause, i);
+        if perm == "r" { r_bit = true; }
+        else if perm == "w" { w_bit = true; }
+        else if perm == "x" || perm == "X" { x_bit = true; }
+        else if perm == "s" { s_bit = true; }
+        else if perm == "t" { t_bit = true; }
+        i = i + 1;
+    }
+
+    let mut m: Int = current_mode;
+
+    if op == "=" {
+        if target_u { m = m - (m & 448); }
+        if target_g { m = m - (m & 56); }
+        if target_o { m = m - (m & 7); }
+    }
+
+    if op == "+" || op == "=" {
+        if target_u {
+            if r_bit { m = m | 256; }
+            if w_bit { m = m | 128; }
+            if x_bit { m = m | 64; }
+            if s_bit { m = m | 2048; }
+        }
+        if target_g {
+            if r_bit { m = m | 32; }
+            if w_bit { m = m | 16; }
+            if x_bit { m = m | 8; }
+            if s_bit { m = m | 1024; }
+        }
+        if target_o {
+            if r_bit { m = m | 4; }
+            if w_bit { m = m | 2; }
+            if x_bit { m = m | 1; }
+            if t_bit { m = m | 512; }
+        }
+    } else if op == "-" {
+        if target_u {
+            if r_bit && (m & 256) != 0 { m = m - 256; }
+            if w_bit && (m & 128) != 0 { m = m - 128; }
+            if x_bit && (m & 64) != 0 { m = m - 64; }
+            if s_bit && (m & 2048) != 0 { m = m - 2048; }
+        }
+        if target_g {
+            if r_bit && (m & 32) != 0 { m = m - 32; }
+            if w_bit && (m & 16) != 0 { m = m - 16; }
+            if x_bit && (m & 8) != 0 { m = m - 8; }
+            if s_bit && (m & 1024) != 0 { m = m - 1024; }
+        }
+        if target_o {
+            if r_bit && (m & 4) != 0 { m = m - 4; }
+            if w_bit && (m & 2) != 0 { m = m - 2; }
+            if x_bit && (m & 1) != 0 { m = m - 1; }
+            if t_bit && (m & 512) != 0 { m = m - 512; }
+        }
+    }
+
+    return m;
+}
+
+pub fn apply_symbolic_mode(current_mode: Int, spec: String) -> Int {
+    let clauses: List[String] = str_split(spec, ",");
+    let n: Int = list_len(clauses);
+    let mut m: Int = current_mode;
+    let mut i: Int = 0;
+    while i < n {
+        let clause: String = list_get(clauses, i);
+        m = apply_symbolic_clause(m, str_trim(clause));
+        i = i + 1;
+    }
+    return m;
+}
+
+pub fn resolve_target_mode(current_mode: Int, mode_spec: String) -> Int {
+    let clean: String = str_trim(mode_spec);
+    if is_octal_string(clean) {
+        return octal_to_int(clean);
+    }
+    return apply_symbolic_mode(current_mode, clean);
+}

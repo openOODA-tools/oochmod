@@ -4,7 +4,7 @@
 # "Removes oochmod binary, package installations, and cache."
 #
 # Usage:
-#   curl -fsSL https://openooda-toochmod.github.io/oochmod/uninstall.sh | bash
+#   curl -fsSL https://openOODA-tools.github.io/oochmod/uninstall.sh | bash
 #   or: ./uninstall.sh [options]
 #
 # Options:

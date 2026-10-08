@@ -1,0 +1,38 @@
+// # oochmod Render Subsystem Anchor
+//
+// Logline: Verification anchor validating terminal output renderers and JSON formatters.
+//
+// Setup: Asserts rendering invariants across changed, retained, and JSON outputs.
+//
+// Beats:
+//   1. Validate changed target output rendering.
+//   2. Validate retained target output filtering under changes_only.
+//   3. Validate JSON summary and target stream serialization.
+//   4. Deliver render subsystem readiness predicate.
+
+import "core/chmod_types.oo";
+import "render/chmod_theme.oo";
+
+pub fn verify_render_subsystem() -> Bool {
+    let t1: ChmodTarget = make_chmod_target("/app/run.sh", "0644", "rw-r--r--", "0755", "rwxr-xr-x", "CHANGED", "");
+    let s1: String = render_target_output(t1, false, false, false);
+    if !str_contains(s1, "mode of '/app/run.sh' changed from") {
+        return false;
+    }
+
+    let t2: ChmodTarget = make_chmod_target("/app/run.sh", "0755", "rwxr-xr-x", "0755", "rwxr-xr-x", "RETAINED", "");
+    let s2: String = render_target_output(t2, false, true, false);
+    if chars_len(s2) != 0 {
+        return false;
+    }
+
+    let mut list: List[ChmodTarget] = list_new();
+    list = list_push(list, t1);
+    let sum: ChmodSummary = make_chmod_summary(1, 1, 0, 0);
+    let json_res: String = render_json_results(list, sum, "0755");
+    if !str_contains(json_res, "\"to_octal\":\"0755\"") {
+        return false;
+    }
+
+    return true;
+}

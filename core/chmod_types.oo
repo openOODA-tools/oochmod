@@ -1,0 +1,93 @@
+// # oochmod Core Data Types
+//
+// Logline: Data structures for file permission modes, change targets, summaries, and tmpfiles rules.
+//
+// Setup: Encapsulates octal and symbolic representation of UNIX file access bits.
+//
+// Beats:
+//   1. Declare ChmodTarget record for path permission state and transitions.
+//   2. Declare ChmodSummary record for operational statistics.
+//   3. Declare ModeComponents record for structured mode bitmask representation.
+//   4. Declare TmpfilesEntry record for declarative systemd-tmpfiles specification.
+
+pub type ChmodTarget = struct {
+    path: String,
+    current_mode_octal: String,
+    current_mode_symbolic: String,
+    target_mode_octal: String,
+    target_mode_symbolic: String,
+    status: String,
+    error_message: String
+};
+
+pub type ChmodSummary = struct {
+    total: Int,
+    changed: Int,
+    retained: Int,
+    failed: Int
+};
+
+pub type ModeComponents = struct {
+    special_bits: Int,
+    user_bits: Int,
+    group_bits: Int,
+    other_bits: Int,
+    raw_mode: Int
+};
+
+pub type TmpfilesEntry = struct {
+    action: String,
+    path: String,
+    mode: String,
+    uid: String,
+    gid: String,
+    age: String,
+    argument: String
+};
+
+pub fn make_chmod_target(
+    path: String,
+    curr_oct: String,
+    curr_sym: String,
+    tgt_oct: String,
+    tgt_sym: String,
+    status: String,
+    err_msg: String
+) -> ChmodTarget {
+    return ChmodTarget {
+        path: path,
+        current_mode_octal: curr_oct,
+        current_mode_symbolic: curr_sym,
+        target_mode_octal: tgt_oct,
+        target_mode_symbolic: tgt_sym,
+        status: status,
+        error_message: err_msg
+    };
+}
+
+pub fn make_chmod_summary(tot: Int, chg: Int, ret: Int, fail: Int) -> ChmodSummary {
+    return ChmodSummary {
+        total: tot,
+        changed: chg,
+        retained: ret,
+        failed: fail
+    };
+}
+
+pub fn make_tmpfiles_entry(
+    action: String,
+    path: String,
+    mode: String,
+    uid: String,
+    gid: String
+) -> TmpfilesEntry {
+    return TmpfilesEntry {
+        action: action,
+        path: path,
+        mode: mode,
+        uid: uid,
+        gid: gid,
+        age: "-",
+        argument: "-"
+    };
+}

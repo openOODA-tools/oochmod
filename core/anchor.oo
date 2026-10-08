@@ -1,0 +1,55 @@
+// # oochmod Core Subsystem Anchor
+//
+// Logline: Verification anchor validating permission math, planning, and tmpfiles synthesis.
+//
+// Setup: Asserts internal invariants across data structures and calculation pipelines.
+//
+// Beats:
+//   1. Validate octal string decoding and encoding round-trips.
+//   2. Validate symbolic 9-character mode string formatting.
+//   3. Validate symbolic clause mutation operations (u+x, go-w).
+//   4. Validate systemd-tmpfiles rule formatting.
+
+import "core/chmod_types.oo";
+import "core/chmod_calc.oo";
+import "core/chmod_plan.oo";
+import "core/chmod_demo.oo";
+
+pub fn verify_core_subsystem() -> Bool {
+    if !is_octal_string("0755") || is_octal_string("u+x") {
+        return false;
+    }
+    if octal_to_int("0755") != 493 {
+        return false;
+    }
+    if int_to_octal_str(493) != "0755" {
+        return false;
+    }
+    if mode_to_symbolic(493) != "rwxr-xr-x" {
+        return false;
+    }
+
+    let m_644: Int = 420;
+    let m_744: Int = apply_symbolic_clause(m_644, "u+x");
+    if m_744 != 484 {
+        return false;
+    }
+
+    let plan1: ChmodTarget = plan_single_chmod("/tmp/test", 493, "0755");
+    if plan1.status != "RETAINED" {
+        return false;
+    }
+
+    let plan2: ChmodTarget = plan_single_chmod("/tmp/test", 420, "0755");
+    if plan2.status != "PENDING" {
+        return false;
+    }
+
+    let tmp_entry: TmpfilesEntry = make_tmpfiles_entry("z", "/usr/bin/app", "0755", "-", "-");
+    let line: String = format_tmpfiles_rule(tmp_entry);
+    if !str_starts_with(line, "z /usr/bin/app 0755") {
+        return false;
+    }
+
+    return true;
+}

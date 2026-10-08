@@ -1,0 +1,65 @@
+// # oochmod Synthetic Demonstration Engine
+//
+// Logline: Synthetic filesystem permission fixtures for offline verification and testing.
+//
+// Setup: Generates simulated UNIX permission transitions and tmpfiles specifications.
+//
+// Beats:
+//   1. Construct sample permission transition target scenarios.
+//   2. Provide synthetic verification summary.
+//   3. Generate demonstration tmpfiles declarative entries.
+//   4. Deliver deterministic test fixtures for CI and container sandboxes.
+
+import "core/chmod_types.oo";
+import "core/chmod_plan.oo";
+
+pub fn build_demo_targets() -> List[ChmodTarget] {
+    let mut targets: List[ChmodTarget] = list_new();
+    targets = list_push(targets, make_chmod_target(
+        "/usr/local/bin/deploy.sh",
+        "0644",
+        "rw-r--r--",
+        "0755",
+        "rwxr-xr-x",
+        "WOULD_CHANGE",
+        ""
+    ));
+    targets = list_push(targets, make_chmod_target(
+        "/etc/shadow",
+        "0000",
+        "---------",
+        "0000",
+        "---------",
+        "RETAINED",
+        ""
+    ));
+    targets = list_push(targets, make_chmod_target(
+        "/var/www/html/index.php",
+        "0777",
+        "rwxrwxrwx",
+        "0644",
+        "rw-r--r--",
+        "WOULD_CHANGE",
+        ""
+    ));
+    targets = list_push(targets, make_chmod_target(
+        "/proc/sys/kernel/core_pattern",
+        "0644",
+        "rw-r--r--",
+        "0444",
+        "r--r--r--",
+        "FAILED",
+        "read-only filesystem or permission denied"
+    ));
+    return targets;
+}
+
+pub fn build_demo_summary() -> ChmodSummary {
+    let targets: List[ChmodTarget] = build_demo_targets();
+    return summarize_chmod_targets(targets);
+}
+
+pub fn build_demo_tmpfiles() -> List[TmpfilesEntry] {
+    let targets: List[ChmodTarget] = build_demo_targets();
+    return build_chmod_tmpfiles(targets, false);
+}

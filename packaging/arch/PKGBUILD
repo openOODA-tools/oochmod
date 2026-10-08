@@ -1,7 +1,7 @@
 # Maintainer: openOODA-tools <ops@openooda.org>
 pkgname=oochmod-bin
 _pkgname=oochmod
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Applies octal and symbolic permission masks with capability boundary constraints."
 arch=('x86_64')

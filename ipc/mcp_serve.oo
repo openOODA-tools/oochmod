@@ -1,0 +1,144 @@
+// # Model Context Protocol (MCP) Server for oochmod
+//
+// Logline: JSON-RPC 2.0 stdio server providing permission parsing, inspection, planning, and tmpfiles synthesis.
+//
+// Setup: Demands FsReadCap and ProcessCap to service streaming agent tool invocations over standard input.
+//
+// Beats:
+//   1. Handle MCP initialize handshake with server metadata.
+//   2. Expose tools/list catalogue with five sovereign permission management tools.
+//   3. Dispatch tools/call for chmod_parse, inspect, plan, tmpfiles, and audit.
+//   4. Deliver streaming JSON-RPC responses over standard output.
+
+import "core/chmod_types.oo";
+import "core/chmod_calc.oo";
+import "core/chmod_plan.oo";
+import "ipc/json_field.oo";
+
+pub fn render_mcp_init(id: String) -> String {
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"oochmod\",\"version\":\"0.2.0\"}}}\n";
+}
+
+pub fn render_mcp_tools_list(id: String) -> String {
+    let mut out: String = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"tools\":[";
+    out = out + "{\"name\":\"chmod_parse\",\"description\":\"Parse symbolic or octal mode string into normalized octal and 9-char symbolic format.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"mode\":{\"type\":\"string\"},\"current_mode\":{\"type\":\"string\"}},\"required\":[\"mode\"]}},";
+    out = out + "{\"name\":\"chmod_inspect\",\"description\":\"Inspect filesystem path permission bits in octal and symbolic formats.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},";
+    out = out + "{\"name\":\"chmod_plan\",\"description\":\"Plan permission mode changes for a path without disk modification.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\"},\"current_mode\":{\"type\":\"string\"}},\"required\":[\"path\",\"mode\"]}},";
+    out = out + "{\"name\":\"chmod_tmpfiles\",\"description\":\"Synthesize declarative systemd-tmpfiles rule for path.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\"},\"recursive\":{\"type\":\"string\"}},\"required\":[\"path\",\"mode\"]}},";
+    out = out + "{\"name\":\"chmod_audit\",\"description\":\"Audit path permissions against expected baseline mode.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"expected_mode\":{\"type\":\"string\"}},\"required\":[\"path\",\"expected_mode\"]}}";
+    out = out + "]}}\n";
+    return out;
+}
+
+pub fn handle_mcp_call(
+    _fs: &FsReadCap,
+    proc_cap: &ProcessCap,
+    id: String,
+    tool_name: String,
+    req: String
+) -> String {
+    if tool_name == "chmod_parse" {
+        let mode_spec: String = extract_json_str(req, "mode");
+        let curr_spec: String = extract_json_str(req, "current_mode");
+        let base_mode: Int = if chars_len(curr_spec) > 0 { octal_to_int(curr_spec) } else { 420 };
+        let resolved: Int = resolve_target_mode(base_mode, mode_spec);
+        let oct: String = int_to_octal_str(resolved);
+        let sym: String = mode_to_symbolic(resolved);
+        let res_text: String = "Mode Spec: " + mode_spec + "\nOctal: " + oct + "\nSymbolic: " + sym + "\n";
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + json_escape(res_text) + "\"}]}}\n";
+    }
+
+    if tool_name == "chmod_inspect" {
+        let path: String = extract_json_str(req, "path");
+        let mode_val: Int = inspect_path_mode(proc_cap, path);
+        let oct: String = int_to_octal_str(mode_val);
+        let sym: String = mode_to_symbolic(mode_val);
+        let res_text: String = "Path: " + path + "\nOctal: " + oct + "\nSymbolic: " + sym + "\n";
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + json_escape(res_text) + "\"}]}}\n";
+    }
+
+    if tool_name == "chmod_plan" {
+        let path: String = extract_json_str(req, "path");
+        let mode_spec: String = extract_json_str(req, "mode");
+        let curr_spec: String = extract_json_str(req, "current_mode");
+        let curr_mode: Int = if chars_len(curr_spec) > 0 {
+            octal_to_int(curr_spec)
+        } else {
+            inspect_path_mode(proc_cap, path)
+        };
+        let target: ChmodTarget = plan_single_chmod(path, curr_mode, mode_spec);
+        let res_text: String = "Path: " + path + "\nCurrent Mode: " + target.current_mode_octal + " (" + target.current_mode_symbolic + ")\n"
+            + "Target Mode: " + target.target_mode_octal + " (" + target.target_mode_symbolic + ")\n"
+            + "Plan Status: " + target.status + "\n";
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + json_escape(res_text) + "\"}]}}\n";
+    }
+
+    if tool_name == "chmod_tmpfiles" {
+        let path: String = extract_json_str(req, "path");
+        let mode_spec: String = extract_json_str(req, "mode");
+        let rec_str: String = extract_json_str(req, "recursive");
+        let is_rec: Bool = (rec_str == "true" || rec_str == "1");
+        let act: String = if is_rec { "Z" } else { "z" };
+        let oct: String = if is_octal_string(mode_spec) { int_to_octal_str(octal_to_int(mode_spec)) } else { "0755" };
+        let entry: TmpfilesEntry = make_tmpfiles_entry(act, path, oct, "-", "-");
+        let rule: String = format_tmpfiles_rule(entry);
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + json_escape(rule) + "\n\"}]}}\n";
+    }
+
+    if tool_name == "chmod_audit" {
+        let path: String = extract_json_str(req, "path");
+        let exp_mode: String = extract_json_str(req, "expected_mode");
+        let curr_val: Int = inspect_path_mode(proc_cap, path);
+        let curr_oct: String = int_to_octal_str(curr_val);
+        let exp_val: Int = octal_to_int(exp_mode);
+        let exp_oct: String = int_to_octal_str(exp_val);
+        let mut res_text: String = "";
+        if curr_val == exp_val {
+            res_text = "COMPLIANT: " + path + " matches expected mode " + exp_oct + " (" + mode_to_symbolic(curr_val) + ")\n";
+        } else {
+            res_text = "DRIFTED: " + path + " has mode " + curr_oct + " (" + mode_to_symbolic(curr_val) + "), expected " + exp_oct + " (" + mode_to_symbolic(exp_val) + ")\n";
+        }
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + json_escape(res_text) + "\"}]}}\n";
+    }
+
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}\n";
+}
+
+pub fn handle_mcp_message(fs: &FsReadCap, proc_cap: &ProcessCap, req: String) -> String {
+    let id_str: String = extract_json_str(req, "id");
+    let id: String = if chars_len(id_str) > 0 { "\"" + id_str + "\"" } else { "1" };
+    let method: String = extract_json_str(req, "method");
+
+    if method == "initialize" {
+        return render_mcp_init(id);
+    }
+    if method == "tools/list" {
+        return render_mcp_tools_list(id);
+    }
+    if method == "tools/call" {
+        let tool_name: String = extract_json_str(req, "name");
+        return handle_mcp_call(fs, proc_cap, id, tool_name, req);
+    }
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}\n";
+}
+
+pub fn run_mcp_server(fs: &FsReadCap, proc_cap: &ProcessCap) {
+    let mut running: Bool = true;
+    while running {
+        let line_res: Result[String, String] = oo_read_stdin_chunk(fs, 8192);
+        if !line_res.is_ok() {
+            running = false;
+        } else {
+            let line: String = match line_res { Ok(s) => s, Err(_) => "" };
+            let trimmed: String = str_trim(line);
+            if chars_len(trimmed) == 0 {
+                running = false;
+            } else {
+                let resp: String = handle_mcp_message(fs, proc_cap, trimmed);
+                if chars_len(resp) > 0 {
+                    print(resp);
+                }
+            }
+        }
+    }
+}

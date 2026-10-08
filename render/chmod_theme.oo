@@ -1,0 +1,81 @@
+// # oochmod Terminal and Telemetry Renderer
+//
+// Logline: Formats POSIX diagnostic notices, systemd-tmpfiles rules, and JSON telemetry streams.
+//
+// Setup: Maps ChmodTarget models into human-readable terminal outputs and JSON structures.
+//
+// Beats:
+//   1. Format individual file target status (changed, retained, dry-run, failure).
+//   2. Format execution summary counts and error warnings.
+//   3. Render structured JSON telemetry for automated agent ingestion.
+//   4. Deliver consistent POSIX chmod diagnostic conventions.
+
+import "core/chmod_types.oo";
+
+pub fn render_target_output(target: ChmodTarget, verbose: Bool, changes_only: Bool, quiet: Bool) -> String {
+    if target.status == "CHANGED" {
+        return "mode of '" + target.path + "' changed from "
+            + target.current_mode_octal + " (" + target.current_mode_symbolic + ") to "
+            + target.target_mode_octal + " (" + target.target_mode_symbolic + ")\n";
+    }
+    if target.status == "WOULD_CHANGE" {
+        return "[dry-run] mode of '" + target.path + "' would change from "
+            + target.current_mode_octal + " (" + target.current_mode_symbolic + ") to "
+            + target.target_mode_octal + " (" + target.target_mode_symbolic + ")\n";
+    }
+    if target.status == "RETAINED" {
+        if changes_only {
+            return "";
+        }
+        if verbose {
+            return "mode of '" + target.path + "' retained as "
+                + target.target_mode_octal + " (" + target.target_mode_symbolic + ")\n";
+        }
+        return "";
+    }
+    if target.status == "FAILED" {
+        if quiet {
+            return "";
+        }
+        return "oochmod: failed to change mode of '" + target.path + "': " + target.error_message + "\n";
+    }
+    return "";
+}
+
+pub fn render_summary_warnings(sum: ChmodSummary) -> String {
+    let mut out: String = "";
+    if sum.failed > 0 {
+        out = out + "oochmod: WARNING: " + to_string(sum.failed) + " path(s) failed mode modification\n";
+    }
+    return out;
+}
+
+pub fn render_json_results(
+    targets: List[ChmodTarget],
+    sum: ChmodSummary,
+    mode_spec: String
+) -> String {
+    let mut out: String = "{\"status\":\"ok\",\"tool\":\"oochmod\",\"mode_spec\":\"" + mode_spec + "\"";
+    out = out + ",\"total\":" + to_string(sum.total);
+    out = out + ",\"changed\":" + to_string(sum.changed);
+    out = out + ",\"retained\":" + to_string(sum.retained);
+    out = out + ",\"failed\":" + to_string(sum.failed);
+    out = out + ",\"targets\":[";
+
+    let n: Int = list_len(targets);
+    let mut i: Int = 0;
+    while i < n {
+        let t: ChmodTarget = list_get(targets, i);
+        out = out + "{\"path\":\"" + t.path + "\",\"from_octal\":\"" + t.current_mode_octal
+            + "\",\"from_symbolic\":\"" + t.current_mode_symbolic
+            + "\",\"to_octal\":\"" + t.target_mode_octal
+            + "\",\"to_symbolic\":\"" + t.target_mode_symbolic
+            + "\",\"status\":\"" + t.status + "\"}";
+        if i < n - 1 {
+            out = out + ",";
+        }
+        i = i + 1;
+    }
+    out = out + "]}\n";
+    return out;
+}

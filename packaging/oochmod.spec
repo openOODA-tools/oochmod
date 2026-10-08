@@ -1,5 +1,5 @@
 Name:           oochmod
-Version:        0.1.0
+Version:        0.2.0
 Release:        1%{?dist}
 Summary:        Applies octal and symbolic permission masks with capability boundary constraints.
 License:        ASL 2.0
@@ -10,9 +10,9 @@ BuildArch:      x86_64
 Requires:       glibc
 
 %description
-oochmod is a sovereign, capability-bounded MODE CHANGER written
-in pure openOODA, featuring zero ambient authority, oote color themes,
-and an MCP stdio server.
+oochmod is a sovereign, capability-bounded PERMISSION MANAGER written
+in pure openOODA, featuring zero ambient authority, systemd-tmpfiles declarative
+synthesis, and an MCP stdio server.
 
 %install
 mkdir -p %{buildroot}/usr/bin
@@ -24,5 +24,5 @@ install -m 0755 %{SOURCE1} %{buildroot}/usr/bin/oochmod-uninstall
 /usr/bin/oochmod-uninstall
 
 %changelog
-* Wed Oct 07 2026 openOODA-tools <ops@openooda.org> - 0.1.0-1
-- Initial sovereign blueprint scaffolding
+* Thu Oct 08 2026 openOODA-tools <ops@openooda.org> - 0.2.0-1
+- Elevate to pure openOODA implementation with dual CLI and MCP surface
